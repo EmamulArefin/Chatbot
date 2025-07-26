@@ -15,6 +15,90 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 # Load environment variables
 load_dotenv()
 
+# Configure Tesseract path for Windows
+def check_tesseract_installation():
+    """Check if Tesseract is properly configured"""
+    if os.name == 'nt':  # Windows
+        tesseract_paths = [
+            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe'
+        ]
+        
+        for path in tesseract_paths:
+            if os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                return True
+        
+        # If not found in standard locations, try to find it in PATH
+        try:
+            import subprocess
+            result = subprocess.run(['tesseract', '--version'], 
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                return True
+        except FileNotFoundError:
+            pass
+        
+        return False
+    else:
+        # For non-Windows systems, assume it's in PATH
+        try:
+            import subprocess
+            result = subprocess.run(['tesseract', '--version'], 
+                                    capture_output=True, text=True)
+            return result.returncode == 0
+        except FileNotFoundError:
+            return False
+
+def check_bengali_support():
+    """Check if Bengali language pack is installed"""
+    try:
+        import subprocess
+        if os.name == 'nt':
+            cmd = [pytesseract.pytesseract.tesseract_cmd, '--list-langs']
+        else:
+            cmd = ['tesseract', '--list-langs']
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return 'ben' in result.stdout
+        return False
+    except Exception:
+        return False
+
+# Check Tesseract installation
+TESSERACT_AVAILABLE = check_tesseract_installation()
+
+if not TESSERACT_AVAILABLE:
+    st.error("⚠️ Tesseract OCR is not installed or not found!")
+    st.markdown("""
+    **To fix this issue:**
+    1. Install Tesseract OCR from: https://github.com/UB-Mannheim/tesseract/wiki
+    2. Or run this command in PowerShell as Administrator:
+       ```
+       winget install UB-Mannheim.TesseractOCR
+       ```
+    3. Restart your application after installation
+    """)
+    st.stop()
+
+# Check Bengali language support
+BENGALI_AVAILABLE = check_bengali_support()
+
+if not BENGALI_AVAILABLE:
+    st.error("⚠️ Bengali language data not found for Tesseract!")
+    st.markdown("""
+    **To enable Bengali OCR support:**
+    1. Run the provided script as Administrator: `install_bengali_lang.ps1`
+    2. Or manually:
+       - Download: https://github.com/tesseract-ocr/tessdata/raw/main/ben.traineddata
+       - Place it in: `C:\\Program Files\\Tesseract-OCR\\tessdata\\ben.traineddata`
+    3. Restart your application
+    
+    **Note:** You can also try with English OCR for testing (change TESSERACT_CONFIG to '--oem 3 --psm 6 -l eng')
+    """)
+    st.stop()
+
 # Configuration
 DATA_DIR = "data"
 CACHE_DIR = "cache"
@@ -34,17 +118,36 @@ def load_embedding_model():
 
 def extract_text_from_pdf(pdf_path):
     """Extract Bangla text from PDF using OCR"""
-    images = convert_from_path(pdf_path, dpi=300)
-    full_text = ""
-    
-    with st.spinner("Extracting text from PDF..."):
-        progress_bar = st.progress(0)
-        for i, image in enumerate(images):
-            text = pytesseract.image_to_string(image, config=TESSERACT_CONFIG)
-            full_text += text + "\n\n"
-            progress_bar.progress((i + 1) / len(images))
-        st.success("Text extraction complete!")
-    return full_text
+    try:
+        images = convert_from_path(pdf_path, dpi=300)
+        full_text = ""
+        
+        with st.spinner("Extracting text from PDF..."):
+            progress_bar = st.progress(0)
+            for i, image in enumerate(images):
+                try:
+                    text = pytesseract.image_to_string(image, config=TESSERACT_CONFIG)
+                    full_text += text + "\n\n"
+                except pytesseract.TesseractError as e:
+                    if 'ben' in str(e):
+                        st.error("⚠️ Bengali language data not found for Tesseract!")
+                        st.markdown("""
+                        **To fix this issue:**
+                        1. Run the provided script as Administrator: `install_bengali_lang.ps1`
+                        2. Or manually download Bengali language data from: https://github.com/tesseract-ocr/tessdata/raw/main/ben.traineddata
+                        3. Place it in: `C:\\Program Files\\Tesseract-OCR\\tessdata\\ben.traineddata`
+                        4. Restart your application
+                        """)
+                        st.stop()
+                    else:
+                        st.error(f"Tesseract error: {str(e)}")
+                        st.stop()
+                progress_bar.progress((i + 1) / len(images))
+            st.success("Text extraction complete!")
+        return full_text
+    except Exception as e:
+        st.error(f"Error processing PDF: {str(e)}")
+        st.stop()
 
 def process_pdf(pdf_path, model):
     """Process PDF and create embeddings"""
