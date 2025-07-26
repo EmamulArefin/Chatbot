@@ -7,3 +7,4 @@ openai
 faiss-cpu
 Pillow
 python-dotenv
+langchain
