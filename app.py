@@ -188,7 +188,10 @@ def process_pdf(pdf_path, model):
 def query_openai(prompt):
     """Send query to OpenAI GPT-4o"""
     try:
-        response = openai.ChatCompletion.create(
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that answers questions in Bangla."},
@@ -197,7 +200,7 @@ def query_openai(prompt):
             temperature=0.2,
             max_tokens=500
         )
-        return response.choices[0].message['content'].strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"OpenAI Error: {str(e)}")
         return None
@@ -208,10 +211,9 @@ st.title("📄 Bangla PDF Question Answering System")
 
 # Sidebar configuration
 st.sidebar.header("Configuration")
-openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password")
+openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
 if openai_api_key:
     os.environ["OPENAI_API_KEY"] = openai_api_key
-    openai.api_key = openai_api_key
 else:
     st.sidebar.warning("Enter OpenAI API key to enable GPT-4o")
 
