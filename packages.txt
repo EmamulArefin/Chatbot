@@ -1,6 +1,0 @@
-# Streamlit Cloud deployment configuration
-# This file tells Streamlit Cloud how to install system dependencies
-
-opencv-python-headless
-tesseract
-poppler-utils

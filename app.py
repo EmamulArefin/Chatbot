@@ -66,55 +66,10 @@ def check_bengali_support():
     except Exception:
         return False
 
-# Check Tesseract installation
-TESSERACT_AVAILABLE = check_tesseract_installation()
-
-if not TESSERACT_AVAILABLE:
-    st.error("⚠️ Tesseract OCR is not installed or not found!")
-    st.markdown("""
-    **To fix this issue:**
-    1. Install Tesseract OCR from: https://github.com/UB-Mannheim/tesseract/wiki
-    2. Or run this command in PowerShell as Administrator:
-       ```
-       winget install UB-Mannheim.TesseractOCR
-       ```
-    3. Restart your application after installation
-    """)
-    st.stop()
-
-# Check Bengali language support
-BENGALI_AVAILABLE = check_bengali_support()
-
-if not BENGALI_AVAILABLE:
-    st.error("⚠️ Bengali language data not found for Tesseract!")
-    st.markdown("""
-    **To enable Bengali OCR support:**
-    1. Run the provided script as Administrator: `install_bengali_lang.ps1`
-    2. Or manually:
-       - Download: https://github.com/tesseract-ocr/tessdata/raw/main/ben.traineddata
-       - Place it in: `C:\\Program Files\\Tesseract-OCR\\tessdata\\ben.traineddata`
-    3. Restart your application
-    
-    **Note:** You can also try with English OCR for testing (change TESSERACT_CONFIG to '--oem 3 --psm 6 -l eng')
-    """)
-    st.stop()
-
-# Configuration
-DATA_DIR = "data"
-CACHE_DIR = "cache"
-PDF_NAME = "bangla_document.pdf"  
-PDF_PATH = os.path.join(DATA_DIR, PDF_NAME)
-MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-TESSERACT_CONFIG = '--oem 3 --psm 6 -l ben'
-
-# Create directories if missing
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(CACHE_DIR, exist_ok=True)
-
 # Initialize models
 @st.cache_resource
 def load_embedding_model():
-    return SentenceTransformer(MODEL_NAME)
+    return SentenceTransformer("sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
 
 def extract_text_from_pdf(pdf_path):
     """Extract Bangla text from PDF using OCR"""
@@ -126,7 +81,7 @@ def extract_text_from_pdf(pdf_path):
             progress_bar = st.progress(0)
             for i, image in enumerate(images):
                 try:
-                    text = pytesseract.image_to_string(image, config=TESSERACT_CONFIG)
+                    text = pytesseract.image_to_string(image, config='--oem 3 --psm 6 -l ben')
                     full_text += text + "\n\n"
                 except pytesseract.TesseractError as e:
                     if 'ben' in str(e):
@@ -151,7 +106,9 @@ def extract_text_from_pdf(pdf_path):
 
 def process_pdf(pdf_path, model):
     """Process PDF and create embeddings"""
-    cache_path = os.path.join(CACHE_DIR, f"{os.path.basename(pdf_path)}.pkl")
+    cache_dir = "cache"
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f"{os.path.basename(pdf_path)}.pkl")
     
     # Check cache
     if os.path.exists(cache_path):
@@ -205,61 +162,103 @@ def query_openai(prompt):
         st.error(f"OpenAI Error: {str(e)}")
         return None
 
-# Streamlit UI
-st.set_page_config(page_title="Bangla PDF QA", page_icon="📄", layout="wide")
-st.title("📄 Bangla PDF Question Answering System")
+def main():
+    """Main Streamlit application"""
+    # Set page config
+    st.set_page_config(page_title="Bangla PDF QA", page_icon="📄", layout="wide")
+    st.title("📄 Bangla PDF Question Answering System")
 
-# Sidebar configuration
-st.sidebar.header("Configuration")
-openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
-if openai_api_key:
-    os.environ["OPENAI_API_KEY"] = openai_api_key
-else:
-    st.sidebar.warning("Enter OpenAI API key to enable GPT-4o")
+    # Check Tesseract installation
+    if not check_tesseract_installation():
+        st.error("⚠️ Tesseract OCR is not installed or not found!")
+        st.markdown("""
+        **To fix this issue:**
+        1. Install Tesseract OCR from: https://github.com/UB-Mannheim/tesseract/wiki
+        2. Or run this command in PowerShell as Administrator:
+           ```
+           winget install UB-Mannheim.TesseractOCR
+           ```
+        3. Restart your application after installation
+        """)
+        st.stop()
 
-# Main processing
-if not os.path.exists(PDF_PATH):
-    st.warning(f"PDF not found at: {PDF_PATH}")
-    st.info(f"Please place your Bangla PDF in the '{DATA_DIR}' folder as '{PDF_NAME}'")
-    st.stop()
-
-embedding_model = load_embedding_model()
-chunks, index = process_pdf(PDF_PATH, embedding_model)
-
-# Query interface
-st.subheader("Ask questions about the document")
-question = st.text_input("Enter your question in Bangla:", "")
-
-if question and openai_api_key:
-    # Embed question
-    question_embedding = embedding_model.encode([question])
-    
-    # Search index
-    D, I = index.search(question_embedding, k=3)
-    context = "\n\n".join([chunks[i] for i in I[0]])
-    
-    # Build prompt
-    prompt = f"""
-    নিচের প্রসঙ্গ ব্যবহার করে প্রশ্নের উত্তর দাও:
-    
-    প্রসঙ্গ:
-    {context}
-    
-    প্রশ্ন: {question}
-    উত্তর:
-    """
-    
-    # Get response
-    with st.spinner("Generating answer..."):
-        answer = query_openai(prompt)
-    
-    if answer:
-        st.subheader("Answer:")
-        st.success(answer)
+    # Check Bengali language support
+    if not check_bengali_support():
+        st.error("⚠️ Bengali language data not found for Tesseract!")
+        st.markdown("""
+        **To enable Bengali OCR support:**
+        1. Run the provided script as Administrator: `install_bengali_lang.ps1`
+        2. Or manually:
+           - Download: https://github.com/tesseract-ocr/tessdata/raw/main/ben.traineddata
+           - Place it in: `C:\\Program Files\\Tesseract-OCR\\tessdata\\ben.traineddata`
+        3. Restart your application
         
-        with st.expander("See context used"):
-            st.text(context)
+        **Note:** You can also try with English OCR for testing (change TESSERACT_CONFIG to '--oem 3 --psm 6 -l eng')
+        """)
+        st.stop()
 
-# Add footer
-st.markdown("---")
-st.caption("Note: First run will take time for OCR processing. Subsequent runs will use cached embeddings.")
+    # Configuration
+    DATA_DIR = "data"
+    PDF_NAME = "bangla_document.pdf"  
+    PDF_PATH = os.path.join(DATA_DIR, PDF_NAME)
+
+    # Create directories if missing
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    # Sidebar configuration
+    st.sidebar.header("Configuration")
+    openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
+    if openai_api_key:
+        os.environ["OPENAI_API_KEY"] = openai_api_key
+    else:
+        st.sidebar.warning("Enter OpenAI API key to enable GPT-4o")
+
+    # Main processing
+    if not os.path.exists(PDF_PATH):
+        st.warning(f"PDF not found at: {PDF_PATH}")
+        st.info(f"Please place your Bangla PDF in the '{DATA_DIR}' folder as '{PDF_NAME}'")
+        st.stop()
+
+    embedding_model = load_embedding_model()
+    chunks, index = process_pdf(PDF_PATH, embedding_model)
+
+    # Query interface
+    st.subheader("Ask questions about the document")
+    question = st.text_input("Enter your question in Bangla:", "")
+
+    if question and openai_api_key:
+        # Embed question
+        question_embedding = embedding_model.encode([question])
+        
+        # Search index
+        D, I = index.search(question_embedding, k=3)
+        context = "\n\n".join([chunks[i] for i in I[0]])
+        
+        # Build prompt
+        prompt = f"""
+        নিচের প্রসঙ্গ ব্যবহার করে প্রশ্নের উত্তর দাও:
+        
+        প্রসঙ্গ:
+        {context}
+        
+        প্রশ্ন: {question}
+        উত্তর:
+        """
+        
+        # Get response
+        with st.spinner("Generating answer..."):
+            answer = query_openai(prompt)
+        
+        if answer:
+            st.subheader("Answer:")
+            st.success(answer)
+            
+            with st.expander("See context used"):
+                st.text(context)
+
+    # Add footer
+    st.markdown("---")
+    st.caption("Note: First run will take time for OCR processing. Subsequent runs will use cached embeddings.")
+
+if __name__ == "__main__":
+    main()
